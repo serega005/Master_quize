@@ -52,14 +52,14 @@ interface ExtendedQuizState extends QuizState {
   bookmarkedIds: Set<string>;
 }
 
-// Функция для правильного склонения слова "очко"
+// Функция для правильного склонения слова "балл"
 const getScorePlural = (n: number) => {
   const lastDigit = n % 10;
   const lastTwoDigits = n % 100;
-  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return 'очков';
-  if (lastDigit === 1) return 'очко';
-  if (lastDigit >= 2 && lastDigit <= 4) return 'очка';
-  return 'очков';
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return 'баллов';
+  if (lastDigit === 1) return 'балл';
+  if (lastDigit >= 2 && lastDigit <= 4) return 'балла';
+  return 'баллов';
 };
 
 const App: React.FC = () => {
