@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { parseDocxFile } from './services/docxParser';
 import { Question, QuizState, QuizMode } from './types';
 import { Button } from './components/Button';
@@ -9,28 +9,23 @@ import {
   FileText, 
   ChevronRight, 
   Trophy, 
-  RefreshCcw, 
   LogOut, 
   Download, 
   BrainCircuit, 
   ClipboardList, 
-  Lightbulb, 
   Zap, 
   Moon, 
   Sun, 
   Flame, 
-  Sparkles, 
-  Loader2, 
   User, 
   Trash2, 
   Star, 
-  History, 
   Clock, 
-  AlertTriangle,
   ShieldCheck,
   Info,
-  Settings,
-  LogIn
+  LogIn,
+  Layers,
+  Timer
 } from 'lucide-react';
 
 const SESSION_SIZE = 25;
@@ -48,11 +43,13 @@ interface TestHistory {
   score: number;
   total: number;
   mode: string;
+  timeTaken: number;
 }
 
 interface ExtendedQuizState extends QuizState {
   currentStreak: number;
   bookmarkedIds: Set<string>;
+  secondsElapsed: number;
 }
 
 const getScorePlural = (n: number) => {
@@ -62,6 +59,12 @@ const getScorePlural = (n: number) => {
   if (lastDigit === 1) return 'балл';
   if (lastDigit >= 2 && lastDigit <= 4) return 'балла';
   return 'баллов';
+};
+
+const formatTime = (totalSeconds: number) => {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
 const App: React.FC = () => {
@@ -82,7 +85,8 @@ const App: React.FC = () => {
     mode: null,
     fileName: '',
     currentStreak: 0,
-    bookmarkedIds: new Set()
+    bookmarkedIds: new Set(),
+    secondsElapsed: 0
   });
 
   const [library, setLibrary] = useState<SavedFile[]>([]);
@@ -91,6 +95,7 @@ const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('is_logged_in') === 'true');
   
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -126,6 +131,18 @@ const App: React.FC = () => {
     else root.classList.remove('dark');
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  // Управление таймером
+  useEffect(() => {
+    if (state.status === 'quiz') {
+      timerRef.current = window.setInterval(() => {
+        setState(prev => ({ ...prev, secondsElapsed: prev.secondsElapsed + 1 }));
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [state.status]);
 
   const toggleTheme = useCallback(() => setTheme(prev => (prev === 'light' ? 'dark' : 'light')), []);
 
@@ -176,7 +193,18 @@ const App: React.FC = () => {
       const unsolved = allIndices.filter(i => !state.solvedIndices.has(i));
       indices = (unsolved.length > 0 ? unsolved : allIndices).sort(() => Math.random() - 0.5).slice(0, Math.min(SESSION_SIZE, unsolved.length || allIndices.length));
     }
-    setState(prev => ({ ...prev, mode, currentSessionIndices: indices, currentIndex: 0, score: 0, selectedAnswerIndex: null, isAnswerChecked: false, status: 'quiz', currentStreak: 0 }));
+    setState(prev => ({ 
+      ...prev, 
+      mode, 
+      currentSessionIndices: indices, 
+      currentIndex: 0, 
+      score: 0, 
+      selectedAnswerIndex: null, 
+      isAnswerChecked: false, 
+      status: 'quiz', 
+      currentStreak: 0,
+      secondsElapsed: 0 
+    }));
   };
 
   const toggleBookmark = (id: string) => {
@@ -187,6 +215,21 @@ const App: React.FC = () => {
       return { ...prev, bookmarkedIds: newBookmarks };
     });
   };
+
+  const longCorrectStats = useMemo(() => {
+    if (state.allQuestions.length === 0) return null;
+    const longCorrect = state.allQuestions.filter(q => {
+      const lengths = q.answers.map(a => a.text.length);
+      const maxLength = Math.max(...lengths);
+      const correctAns = q.answers.find(a => a.isCorrect);
+      return correctAns && correctAns.text.length === maxLength;
+    }).length;
+    return {
+      count: longCorrect,
+      total: state.allQuestions.length,
+      percent: Math.round((longCorrect / state.allQuestions.length) * 100)
+    };
+  }, [state.allQuestions]);
 
   const checkAnswer = useCallback(() => {
     if (state.selectedAnswerIndex === null) return;
@@ -205,13 +248,20 @@ const App: React.FC = () => {
     if (state.currentIndex + 1 >= state.currentSessionIndices.length) {
       const isCorrect = state.selectedAnswerIndex === state.allQuestions[state.currentSessionIndices[state.currentIndex]].correctIndex;
       const finalScore = state.score + (state.isAnswerChecked && isCorrect ? 1 : 0);
-      const newHistory: TestHistory = { fileName: state.fileName, date: Date.now(), score: finalScore, total: state.currentSessionIndices.length, mode: state.mode || 'test' };
+      const newHistory: TestHistory = { 
+        fileName: state.fileName, 
+        date: Date.now(), 
+        score: finalScore, 
+        total: state.currentSessionIndices.length, 
+        mode: state.mode || 'test',
+        timeTaken: state.secondsElapsed
+      };
       setHistory(prev => [newHistory, ...prev].slice(0, 20));
       setState(prev => ({ ...prev, status: 'result' }));
     } else {
       setState(prev => ({ ...prev, currentIndex: prev.currentIndex + 1, selectedAnswerIndex: null, isAnswerChecked: false }));
     }
-  }, [state.currentIndex, state.currentSessionIndices, state.score, state.fileName, state.mode, state.isAnswerChecked, state.selectedAnswerIndex, state.allQuestions]);
+  }, [state.currentIndex, state.currentSessionIndices, state.score, state.fileName, state.mode, state.isAnswerChecked, state.selectedAnswerIndex, state.allQuestions, state.secondsElapsed]);
 
   const goHome = () => { setState(s => ({ ...s, status: 'idle', allQuestions: [], fileName: '' })); };
 
@@ -283,9 +333,24 @@ const App: React.FC = () => {
           { id: 'favorites', title: 'Избранное', desc: `Ваши отмеченные вопросы (${favsCount}).`, icon: <Star />, color: 'rose', disabled: favsCount === 0 }
         ];
 
+        const getStatsColorClasses = (percent: number) => {
+          if (percent < 60) return 'bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border-rose-100 dark:border-rose-800';
+          if (percent < 72) return 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-800';
+          return 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-800';
+        };
+
         return (
           <div className="max-w-6xl mx-auto py-12 px-4 animate-in zoom-in-95">
-            <h2 className="text-center text-4xl font-black mb-12 dark:text-white">Выберите режим обучения</h2>
+            <div className="text-center mb-12">
+               <h2 className="text-4xl font-black mb-4 dark:text-white tracking-tight">Выберите режим обучения</h2>
+               {longCorrectStats && (
+                 <div className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl border shadow-sm transition-colors duration-500 ${getStatsColorClasses(longCorrectStats.percent)}`}>
+                   <Layers className="w-4 h-4" />
+                   <span className="text-sm font-bold">Длинные прав. ответы: {longCorrectStats.count} из {longCorrectStats.total} ({longCorrectStats.percent}%)</span>
+                 </div>
+               )}
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                {modes.map(m => (
                  <button 
@@ -320,12 +385,25 @@ const App: React.FC = () => {
         const isFav = state.bookmarkedIds.has(q.id);
         return (
           <div className="max-w-3xl mx-auto py-8 px-4 animate-in slide-in-from-bottom-8">
-            {/* Заголовок с названием файла */}
-            <div className="mb-4 px-2 flex items-center gap-2 opacity-60">
-               <FileText className="w-3.5 h-3.5 text-slate-500" />
-               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate max-w-full">
-                 Файл: {state.fileName}
-               </p>
+            <div className="mb-4 px-2 flex items-center justify-between">
+               <div className="flex items-center gap-1.5 opacity-60 overflow-hidden">
+                 <FileText className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">
+                   {state.fileName}
+                 </p>
+               </div>
+               <div className="flex items-center gap-4">
+                 {state.currentStreak > 1 && (
+                   <div className="flex items-center gap-1 animate-bounce">
+                     <Flame className="w-4 h-4 text-orange-500 fill-current" />
+                     <span className="text-xs font-black text-orange-600 dark:text-orange-400">Стрик: {state.currentStreak}!</span>
+                   </div>
+                 )}
+                 <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 px-3 py-1.5 rounded-full text-slate-500 dark:text-slate-400">
+                   <Timer className="w-3.5 h-3.5" />
+                   <span className="text-xs font-black tabular-nums tracking-wider">{formatTime(state.secondsElapsed)}</span>
+                 </div>
+               </div>
             </div>
 
             <div className="flex items-center justify-between mb-8">
@@ -333,12 +411,7 @@ const App: React.FC = () => {
                 <div className="bg-indigo-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg shadow-indigo-200 dark:shadow-none">{state.currentIndex + 1}</div>
                 <div className="flex flex-col">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Вопрос {state.currentIndex + 1} из {state.currentSessionIndices.length}</p>
-                  {state.currentStreak > 1 && (
-                    <div className="flex items-center gap-1.5 mt-1.5 animate-bounce">
-                      <Flame className="w-4 h-4 text-orange-500 fill-current" />
-                      <span className="text-xs font-black text-orange-600 dark:text-orange-400">Стрик: {state.currentStreak}!</span>
-                    </div>
-                  )}
+                  <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase mt-0.5">{state.mode === 'test' ? 'Экзамен' : state.mode === 'preparation' ? 'Тренировка' : 'Марафон'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -352,33 +425,40 @@ const App: React.FC = () => {
                 </button>
               </div>
             </div>
+            
             <div className="bg-white dark:bg-slate-900 p-8 sm:p-12 rounded-[45px] shadow-2xl mb-8 min-h-[180px] flex items-center border border-slate-100 dark:border-slate-800">
                <p className="text-xl sm:text-2xl font-bold dark:text-white leading-tight">{q.text}</p>
             </div>
+
             <div className="space-y-4 mb-12">
               {q.shuffledAnswers.map((ans, idx) => {
-                let btnStyle = "bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 transition-all shadow-sm";
-                let iconStyle = "bg-slate-100 dark:bg-slate-800 text-slate-400";
+                let btnStyle = "bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 shadow-sm";
+                let iconStyle = "bg-slate-100 dark:bg-slate-800 text-slate-400 border-2 border-transparent";
 
                 if (state.isAnswerChecked) {
                   if (idx === q.correctIndex) {
-                    btnStyle = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-600 dark:border-emerald-500 text-emerald-900 dark:text-emerald-400 shadow-emerald-100 dark:shadow-none ring-2 ring-emerald-500 ring-offset-2 dark:ring-offset-slate-950 scale-[1.01]";
-                    iconStyle = "bg-emerald-600 text-white";
+                    btnStyle = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-600 dark:border-emerald-500 text-emerald-900 dark:text-emerald-400 shadow-lg shadow-emerald-100 dark:shadow-none ring-2 ring-emerald-500 ring-offset-2 dark:ring-offset-slate-950 scale-[1.01]";
+                    iconStyle = "bg-emerald-600 text-white border-emerald-600";
                   } else if (state.selectedAnswerIndex === idx) {
-                    btnStyle = "bg-rose-50 dark:bg-rose-900/20 border-rose-600 dark:border-rose-500 text-rose-900 dark:text-rose-400 shadow-rose-100 dark:shadow-none ring-2 ring-rose-500 ring-offset-2 dark:ring-offset-slate-950";
-                    iconStyle = "bg-rose-600 text-white";
+                    btnStyle = "bg-rose-50 dark:bg-rose-900/20 border-rose-600 dark:border-rose-500 text-rose-900 dark:text-rose-400 shadow-lg shadow-rose-100 dark:shadow-none ring-2 ring-rose-500 ring-offset-2 dark:ring-offset-slate-950";
+                    iconStyle = "bg-rose-600 text-white border-rose-600";
                   } else {
-                    btnStyle = "bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800 opacity-40 grayscale-[0.5]";
-                    iconStyle = "bg-slate-100 dark:bg-slate-800 text-slate-300";
+                    btnStyle = "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 opacity-40 grayscale-[0.5]";
+                    iconStyle = "bg-slate-100 dark:bg-slate-800 text-slate-300 border-slate-100 dark:border-slate-800";
                   }
                 } else if (state.selectedAnswerIndex === idx) {
-                  btnStyle = "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-600 dark:border-indigo-500 shadow-indigo-100 dark:shadow-none ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-950";
-                  iconStyle = "bg-indigo-600 text-white";
+                  btnStyle = "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-600 dark:border-indigo-500 shadow-lg shadow-indigo-100 dark:shadow-none ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-950";
+                  iconStyle = "bg-indigo-600 text-white border-indigo-600";
                 }
 
                 return (
-                  <button key={idx} disabled={state.isAnswerChecked} onClick={() => setState(s => ({ ...s, selectedAnswerIndex: idx }))} className={`w-full p-5 sm:p-6 rounded-[35px] flex items-center gap-5 text-left font-bold transition-all duration-300 ${btnStyle}`}>
-                    <span className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 text-sm font-black transition-colors ${iconStyle}`}>
+                  <button 
+                    key={idx} 
+                    disabled={state.isAnswerChecked} 
+                    onClick={() => setState(s => ({ ...s, selectedAnswerIndex: idx }))} 
+                    className={`w-full p-5 sm:p-6 rounded-[35px] flex items-center gap-5 text-left font-bold transition-all duration-300 ${btnStyle}`}
+                  >
+                    <span className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 text-sm font-black transition-all duration-300 ${iconStyle}`}>
                       {state.isAnswerChecked && idx === q.correctIndex ? <CheckCircle2 className="w-6 h-6" /> : 
                        state.isAnswerChecked && state.selectedAnswerIndex === idx ? <XCircle className="w-6 h-6" /> : 
                        String.fromCharCode(65 + idx)}
@@ -388,29 +468,59 @@ const App: React.FC = () => {
                 );
               })}
             </div>
+
             <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg p-5 sm:p-7 rounded-[40px] shadow-2xl flex flex-col sm:flex-row gap-4 justify-between items-center border border-slate-100 dark:border-slate-800">
                <Button variant="outline" className="w-full sm:w-auto px-8 rounded-2xl border-2" onClick={goHome}><LogOut className="w-4 h-4 mr-2" /> Выход</Button>
                {!state.isAnswerChecked ? (
-                 <Button className="w-full sm:w-auto px-16 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none py-4" disabled={state.selectedAnswerIndex === null} onClick={checkAnswer}>Проверить</Button>
+                 <Button className="w-full sm:w-auto px-16 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none py-4 text-lg" disabled={state.selectedAnswerIndex === null} onClick={checkAnswer}>Проверить</Button>
                ) : (
-                 <Button className="w-full sm:w-auto px-16 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none py-4" onClick={nextQuestion}>Дальше <ChevronRight className="ml-2 w-6 h-6" /></Button>
+                 <Button className="w-full sm:w-auto px-16 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none py-4 text-lg" onClick={nextQuestion}>Дальше <ChevronRight className="ml-2 w-6 h-6" /></Button>
                )}
             </div>
           </div>
         );
       case 'result':
+        const finalPercent = Math.round((state.score / state.currentSessionIndices.length) * 100);
+        
+        const getResultClasses = (percent: number) => {
+          if (percent < 60) return {
+            bg: 'bg-rose-50 dark:bg-rose-900/20',
+            text: 'text-rose-600',
+            border: 'border-rose-100 dark:border-rose-800'
+          };
+          if (percent < 72) return {
+            bg: 'bg-amber-50 dark:bg-amber-900/20',
+            text: 'text-amber-600',
+            border: 'border-amber-100 dark:border-amber-800'
+          };
+          return {
+            bg: 'bg-emerald-50 dark:bg-emerald-900/20',
+            text: 'text-emerald-600',
+            border: 'border-emerald-100 dark:border-emerald-800'
+          };
+        };
+
+        const resultStyle = getResultClasses(finalPercent);
+
         return (
           <div className="max-w-2xl mx-auto py-16 px-4 text-center animate-in zoom-in-95">
-             <div className="bg-indigo-50 dark:bg-indigo-900/20 w-32 h-32 rounded-[40px] flex items-center justify-center mx-auto mb-10 shadow-lg"><Trophy className="w-16 h-16 text-indigo-600" /></div>
+             <div className={`${resultStyle.bg} w-32 h-32 rounded-[40px] flex items-center justify-center mx-auto mb-10 shadow-lg transition-colors duration-700`}><Trophy className={`w-16 h-16 ${resultStyle.text}`} /></div>
              <h1 className="text-5xl font-black mb-12 dark:text-white tracking-tighter">Поздравляем!</h1>
-             <div className="grid grid-cols-2 gap-6 mb-12">
-               <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 border-slate-50 dark:border-slate-800 shadow-xl">
-                 <p className="text-4xl font-black text-indigo-600 mb-1">{Math.round((state.score / state.currentSessionIndices.length) * 100)}%</p>
+             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
+               <div className={`bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 shadow-xl transition-colors duration-700 ${resultStyle.border}`}>
+                 <p className={`text-4xl font-black mb-1 ${resultStyle.text}`}>{finalPercent}%</p>
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Точность</p>
                </div>
-               <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 border-slate-50 dark:border-slate-800 shadow-xl">
+               <div className={`bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 shadow-xl transition-colors duration-700 ${resultStyle.border}`}>
                  <p className="text-4xl font-black dark:text-white mb-1">{state.score}</p>
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{getScorePlural(state.score)}</p>
+               </div>
+               <div className={`bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 shadow-xl transition-colors duration-700 flex flex-col justify-center ${resultStyle.border}`}>
+                 <div className="flex items-center justify-center gap-1.5 mb-1">
+                   <Timer className="w-5 h-5 text-indigo-500" />
+                   <p className="text-3xl font-black dark:text-white tabular-nums">{formatTime(state.secondsElapsed)}</p>
+                 </div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Времени затрачено</p>
                </div>
              </div>
              <div className="flex flex-col sm:flex-row justify-center gap-4">
