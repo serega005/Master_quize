@@ -27,9 +27,8 @@ import {
   Star, 
   History, 
   Clock, 
-  Monitor,
   AlertTriangle,
-  Settings
+  Terminal
 } from 'lucide-react';
 
 const SESSION_SIZE = 25;
@@ -87,7 +86,6 @@ const App: React.FC = () => {
   const [library, setLibrary] = useState<SavedFile[]>([]);
   const [history, setHistory] = useState<TestHistory[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   
   const [explanation, setExplanation] = useState<string | null>(null);
   const [isExplaining, setIsExplaining] = useState(false);
@@ -95,8 +93,9 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Проверка наличия ключа
-  const isApiConfigured = !!process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY.length > 10;
+  // Получаем ключ из process.env (внедряется Vite при сборке)
+  const rawKey = process.env.API_KEY || "";
+  const isApiConfigured = rawKey.length > 10 && rawKey !== "undefined";
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -211,20 +210,20 @@ const App: React.FC = () => {
       const correctAns = q.answers[q.correctIndex].text;
       
       if (!isApiConfigured) {
-        setExplanation("ИИ не готов: API_KEY отсутствует. Если вы только что добавили его на Vercel, нажмите 'Redeploy' в панели Vercel и подождите 2 минуты.");
+        setExplanation(`Критическая ошибка: API_KEY не найден в сборке (status: ${typeof process.env.API_KEY}). Проверьте Vercel Settings -> Environment Variables и сделайте Redeploy.`);
         setIsExplaining(false);
         return;
       }
 
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+      const ai = new GoogleGenAI({ apiKey: rawKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Вопрос: ${q.text}\nОтвет: ${correctAns}\nОбъясни кратко логику на русском.`,
-        config: { systemInstruction: "Ты краткий преподаватель. Объясняй в 2 предложениях." }
+        contents: `Вопрос: ${q.text}\nОтвет: ${correctAns}\nОбъясни кратко логику на русском (2 предложения).`,
       });
-      setExplanation(response.text || "Ответ не получен.");
+      setExplanation(response.text || "ИИ не смог сформулировать ответ.");
     } catch (err: any) {
-      setExplanation("Ошибка запроса к ИИ. Убедитесь, что ключ активен и нет ограничений.");
+      console.error("AI Error Debug:", err);
+      setExplanation(`Ошибка API: ${err.message || "Неизвестная ошибка сети"}. Проверьте работоспособность ключа.`);
     } finally { setIsExplaining(false); }
   };
 
@@ -251,15 +250,15 @@ const App: React.FC = () => {
             <div className="text-center mb-12">
                <div className="bg-indigo-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-3"><FileText className="w-10 h-10 text-white" /></div>
                <h1 className="text-5xl font-black dark:text-white mb-4 tracking-tighter">QuizMaster</h1>
-               <p className="text-lg text-slate-500 max-w-md mx-auto">Загрузите документ и начните обучение прямо сейчас.</p>
+               <p className="text-lg text-slate-500 max-w-md mx-auto">Инструмент для эффективной подготовки к тестам.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16 w-full">
               <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center">
-                 <input type="file" accept=".docx" onChange={handleFileUpload} className="hidden" id="docx-upload" ref={fileInputRef} />
+                 <input type="file" accept=".docx" onChange={handleFileUpload} className="hidden" id="docx-upload" />
                  <label htmlFor="docx-upload" className="cursor-pointer group flex flex-col items-center">
                    <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 transition-all"><Download className="w-8 h-8 text-slate-400 group-hover:text-indigo-600" /></div>
-                   <span className="text-xl font-bold dark:text-white mb-2">Выбрать файл</span>
-                   <span className="text-sm text-slate-400">Поддерживается .docx</span>
+                   <span className="text-xl font-bold dark:text-white mb-2">Загрузить тест</span>
+                   <span className="text-sm text-slate-400">Нажмите для выбора .docx</span>
                  </label>
               </div>
               <div className="flex flex-col gap-4">
@@ -279,56 +278,67 @@ const App: React.FC = () => {
                       </div>
                     ))}
                   </div>
-                ) : <div className="flex-1 flex items-center justify-center border border-dashed rounded-3xl text-slate-400 text-sm py-10">Библиотека пока пуста</div>}
+                ) : <div className="flex-1 flex items-center justify-center border border-dashed rounded-3xl text-slate-400 text-sm py-10">Пусто</div>}
               </div>
             </div>
+            {history.length > 0 && (
+               <div className="w-full">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6">История тестов</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {history.slice(0, 4).map((h, i) => (
+                      <div key={i} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border flex justify-between items-center shadow-sm">
+                         <div className="truncate pr-4"><p className="font-bold text-sm truncate dark:text-white">{h.fileName}</p></div>
+                         <div className="text-lg font-black text-indigo-500">{h.score} {getScorePlural(h.score)}</div>
+                      </div>
+                    ))}
+                  </div>
+               </div>
+            )}
           </div>
         );
       case 'mode_selection':
-        const favCount = state.allQuestions.filter(q => state.bookmarkedIds.has(q.id)).length;
+        const fCount = state.allQuestions.filter(q => state.bookmarkedIds.has(q.id)).length;
         return (
           <div className="max-w-5xl mx-auto py-12 px-4 animate-in zoom-in-95">
-            <h2 className="text-center text-3xl font-black mb-12 dark:text-white">Выберите режим</h2>
+            <h2 className="text-center text-3xl font-black mb-12 dark:text-white">Режим тренировки</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                {[
-                 { id: 'test', title: 'Экзамен', desc: 'Случайные 25 вопросов.', icon: <ClipboardList />, color: 'indigo' },
-                 { id: 'preparation', title: 'Тренировка', desc: 'Упор на неизученные.', icon: <BrainCircuit />, color: 'emerald' },
-                 { id: 'speedrun', title: 'Марафон', desc: 'Все вопросы по списку.', icon: <Zap />, color: 'amber' },
-                 { id: 'favorites', title: 'Избранное', desc: `Ваши пометки (${favCount}).`, icon: <Star />, color: 'rose', disabled: favCount === 0 }
+                 { id: 'test', title: 'Экзамен', icon: <ClipboardList />, color: 'indigo' },
+                 { id: 'preparation', title: 'Тренировка', icon: <BrainCircuit />, color: 'emerald' },
+                 { id: 'speedrun', title: 'Марафон', icon: <Zap />, color: 'amber' },
+                 { id: 'favorites', title: 'Избранное', icon: <Star />, color: 'rose', disabled: fCount === 0 }
                ].map(m => (
                  <button key={m.id} disabled={m.disabled} onClick={() => startSession(m.id as QuizMode)} className={`group p-8 bg-white dark:bg-slate-900 border-2 rounded-[35px] text-left hover:shadow-xl transition-all flex flex-col h-full ${m.disabled ? 'opacity-40 grayscale' : 'hover:border-indigo-500'}`}>
-                    <div className={`w-14 h-14 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-2xl flex items-center justify-center mb-6`}>{m.icon}</div>
+                    <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-2xl flex items-center justify-center mb-6">{m.icon}</div>
                     <h3 className="text-xl font-black dark:text-white mb-2">{m.title}</h3>
-                    <p className="text-slate-500 text-xs flex-grow">{m.desc}</p>
                  </button>
                ))}
             </div>
-            <div className="mt-12 text-center"><Button variant="outline" onClick={goHome}>Назад</Button></div>
+            <div className="mt-12 text-center"><Button variant="outline" onClick={goHome}>Отмена</Button></div>
           </div>
         );
       case 'quiz':
-        const currentQ = state.allQuestions[state.currentSessionIndices[state.currentIndex]];
-        const isQBookmarked = state.bookmarkedIds.has(currentQ.id);
+        const q = state.allQuestions[state.currentSessionIndices[state.currentIndex]];
+        const isB = state.bookmarkedIds.has(q.id);
         return (
           <div className="max-w-3xl mx-auto py-8 px-4 animate-in slide-in-from-bottom-8">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-4">
                 <div className="bg-indigo-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl">{state.currentIndex + 1}</div>
-                <div className="hidden sm:block"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Вопрос {state.currentIndex + 1} / {state.currentSessionIndices.length}</p></div>
               </div>
               <div className="flex items-center gap-2">
                 <div className="bg-white dark:bg-slate-900 border px-4 py-2 rounded-xl text-sm font-black text-indigo-600">{state.score} {getScorePlural(state.score)}</div>
-                <button onClick={() => toggleBookmark(currentQ.id)} className={`p-2 rounded-xl border transition-all ${isQBookmarked ? 'bg-rose-50 border-rose-200 text-rose-500' : 'text-slate-300'}`}><Star className={isQBookmarked ? 'fill-current' : ''} /></button>
+                <button onClick={() => toggleBookmark(q.id)} className={`p-2 rounded-xl border transition-all ${isB ? 'bg-rose-50 border-rose-200 text-rose-500' : 'text-slate-300'}`}><Star className={isB ? 'fill-current' : ''} /></button>
               </div>
             </div>
             <div className="bg-white dark:bg-slate-900 p-8 sm:p-10 rounded-[40px] shadow-2xl mb-8 min-h-[160px] flex items-center">
-               <p className="text-xl sm:text-2xl font-bold dark:text-white leading-tight">{currentQ.text}</p>
+               <p className="text-xl sm:text-2xl font-bold dark:text-white leading-tight">{q.text}</p>
             </div>
             <div className="space-y-3 mb-12">
-              {currentQ.shuffledAnswers.map((ans, idx) => {
+              {q.shuffledAnswers.map((ans, idx) => {
                 let btnStyle = "bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 transition-all";
                 if (state.isAnswerChecked) {
-                  if (idx === currentQ.correctIndex) btnStyle = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 text-emerald-900 dark:text-emerald-400";
+                  if (idx === q.correctIndex) btnStyle = "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-500 text-emerald-900 dark:text-emerald-400";
                   else if (state.selectedAnswerIndex === idx) btnStyle = "bg-rose-50 dark:bg-rose-900/20 border-rose-500 text-rose-900 dark:text-rose-400";
                   else btnStyle = "opacity-30";
                 } else if (state.selectedAnswerIndex === idx) btnStyle = "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-600 dark:border-indigo-500";
@@ -343,8 +353,7 @@ const App: React.FC = () => {
             {explanation && (
               <div className="mb-8 p-8 bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-900/30 rounded-[35px] animate-in slide-in-from-top-4">
                 <div className="flex items-center gap-2 text-indigo-600 font-black text-xs uppercase tracking-widest mb-3">
-                  {explanation.includes("ИИ не готов") ? <AlertTriangle className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />} 
-                  {explanation.includes("ИИ не готов") ? "Внимание" : "Пояснение"}
+                   <Sparkles className="w-4 h-4" /> Пояснение
                 </div>
                 <p className="text-slate-700 dark:text-slate-300 italic text-sm sm:text-base">{explanation}</p>
               </div>
@@ -367,22 +376,9 @@ const App: React.FC = () => {
           </div>
         );
       case 'result':
-        return (
-          <div className="max-w-2xl mx-auto py-16 px-4 text-center animate-in zoom-in-95">
-             <Trophy className="w-20 h-20 text-indigo-600 mx-auto mb-8" />
-             <h1 className="text-4xl font-black mb-8 dark:text-white">Тест завершен!</h1>
-             <div className="grid grid-cols-2 gap-4 mb-12">
-               <div className="bg-white dark:bg-slate-900 p-6 rounded-[35px] border"><p className="text-3xl font-black text-indigo-600">{Math.round((state.score / state.currentSessionIndices.length) * 100)}%</p><p className="text-[10px] font-bold text-slate-400 uppercase">Точность</p></div>
-               <div className="bg-white dark:bg-slate-900 p-6 rounded-[35px] border"><p className="text-3xl font-black dark:text-white">{state.score}</p><p className="text-[10px] font-bold text-slate-400 uppercase">{getScorePlural(state.score)}</p></div>
-             </div>
-             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <Button onClick={() => startSession(state.mode!)}>Сначала</Button>
-                <Button variant="secondary" onClick={() => setState(s => ({ ...s, status: 'mode_selection' }))}>К режимам</Button>
-             </div>
-          </div>
-        );
+        return <div className="max-w-2xl mx-auto py-16 px-4 text-center animate-in zoom-in-95"><Trophy className="w-20 h-20 text-indigo-600 mx-auto mb-8" /><h1 className="text-4xl font-black mb-12 dark:text-white">Тест завершен!</h1><div className="flex justify-center gap-4"><Button onClick={() => startSession(state.mode!)}>Сначала</Button><Button variant="secondary" onClick={() => setState(s => ({ ...s, status: 'mode_selection' }))}>К режимам</Button></div></div>;
       case 'loading':
-        return <div className="flex flex-col items-center justify-center py-40"><div className="w-16 h-16 border-4 border-t-indigo-600 rounded-full animate-spin mb-6"></div><p className="text-slate-400 font-bold uppercase tracking-widest">Анализируем...</p></div>;
+        return <div className="flex flex-col items-center justify-center py-40"><div className="w-16 h-16 border-4 border-t-indigo-600 rounded-full animate-spin mb-6"></div><p className="text-slate-400 font-bold uppercase tracking-widest">Загрузка...</p></div>;
     }
   };
 
@@ -402,25 +398,32 @@ const App: React.FC = () => {
                 <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${isApiConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
               </button>
               {showUserMenu && (
-                <div className="absolute right-0 mt-3 w-72 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-5 animate-in fade-in slide-in-from-top-2">
+                <div className="absolute right-0 mt-3 w-80 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 animate-in fade-in slide-in-from-top-2">
                    <div className="mb-4 pb-4 border-b dark:border-slate-800">
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Статус ИИ</p>
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1"><BrainCircuit className="w-3 h-3" /> Статус ИИ</p>
                      <div className="flex items-center gap-2">
                        {isApiConfigured ? (
-                         <><div className="w-2 h-2 bg-emerald-500 rounded-full"></div><span className="text-sm font-bold text-emerald-600">Готов к работе</span></>
+                         <><div className="w-2 h-2 bg-emerald-500 rounded-full"></div><span className="text-sm font-bold text-emerald-600">Ключ активен</span></>
                        ) : (
-                         <><div className="w-2 h-2 bg-amber-500 rounded-full"></div><span className="text-sm font-bold text-amber-600">Не настроен</span></>
+                         <><div className="w-2 h-2 bg-amber-500 rounded-full"></div><span className="text-sm font-bold text-amber-600">Ключ не найден</span></>
                        )}
                      </div>
-                     {!isApiConfigured && (
-                       <p className="text-[10px] text-slate-500 mt-2 leading-tight">Если добавили ключ на Vercel — нажмите <b>Redeploy</b> в панели Vercel.</p>
-                     )}
                    </div>
-                   <div className="space-y-2">
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Профиль</p>
-                     <p className="text-sm font-bold dark:text-white">Локальный сеанс</p>
-                     <p className="text-[10px] text-slate-500 leading-tight">Все данные сохраняются в памяти браузера.</p>
+                   
+                   <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1"><Terminal className="w-3 h-3" /> Отладка</p>
+                     <p className="text-[11px] font-mono break-all text-slate-600 dark:text-slate-400">
+                       Ключ: {rawKey ? `${rawKey.substring(0, 8)}...` : "отсутствует"}
+                     </p>
                    </div>
+                   
+                   {!isApiConfigured && (
+                     <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-xl">
+                        <p className="text-[10px] text-amber-700 dark:text-amber-400 leading-tight">
+                          <b>Инструкция:</b> Добавьте <code className="bg-white px-1">API_KEY</code> в Settings -> Environment Variables на Vercel, затем нажмите <b>Redeploy</b>.
+                        </p>
+                     </div>
+                   )}
                 </div>
               )}
             </div>
