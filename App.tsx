@@ -25,7 +25,9 @@ import {
   Info,
   LogIn,
   Layers,
-  Timer
+  Timer,
+  RefreshCw,
+  LayoutGrid
 } from 'lucide-react';
 
 const SESSION_SIZE = 25;
@@ -485,47 +487,69 @@ const App: React.FC = () => {
         const getResultClasses = (percent: number) => {
           if (percent < 60) return {
             bg: 'bg-rose-50 dark:bg-rose-900/20',
-            text: 'text-rose-600',
-            border: 'border-rose-100 dark:border-rose-800'
+            text: 'text-rose-600 dark:text-rose-400',
+            border: 'border-rose-100 dark:border-rose-800/50',
+            iconBg: 'bg-rose-100 dark:bg-rose-900/50'
           };
           if (percent < 72) return {
             bg: 'bg-amber-50 dark:bg-amber-900/20',
-            text: 'text-amber-600',
-            border: 'border-amber-100 dark:border-amber-800'
+            text: 'text-amber-600 dark:text-amber-400',
+            border: 'border-amber-100 dark:border-amber-800/50',
+            iconBg: 'bg-amber-100 dark:bg-amber-900/50'
           };
           return {
             bg: 'bg-emerald-50 dark:bg-emerald-900/20',
-            text: 'text-emerald-600',
-            border: 'border-emerald-100 dark:border-emerald-800'
+            text: 'text-emerald-600 dark:text-emerald-400',
+            border: 'border-emerald-100 dark:border-emerald-800/50',
+            iconBg: 'bg-emerald-100 dark:bg-emerald-900/50'
           };
         };
 
-        const resultStyle = getResultClasses(finalPercent);
+        const resStyle = getResultClasses(finalPercent);
 
         return (
-          <div className="max-w-2xl mx-auto py-16 px-4 text-center animate-in zoom-in-95">
-             <div className={`${resultStyle.bg} w-32 h-32 rounded-[40px] flex items-center justify-center mx-auto mb-10 shadow-lg transition-colors duration-700`}><Trophy className={`w-16 h-16 ${resultStyle.text}`} /></div>
+          <div className="max-w-4xl mx-auto py-12 px-4 text-center animate-in zoom-in-95">
+             <div className={`${resStyle.iconBg} w-32 h-32 rounded-[45px] flex items-center justify-center mx-auto mb-10 shadow-xl transition-all duration-700 rotate-2`}>
+               <Trophy className={`w-16 h-16 ${resStyle.text}`} />
+             </div>
+             
              <h1 className="text-5xl font-black mb-12 dark:text-white tracking-tighter">Поздравляем!</h1>
-             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
-               <div className={`bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 shadow-xl transition-colors duration-700 ${resultStyle.border}`}>
-                 <p className={`text-4xl font-black mb-1 ${resultStyle.text}`}>{finalPercent}%</p>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Точность</p>
+             
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+               <div className="bg-white dark:bg-slate-900 p-10 rounded-[45px] border border-slate-100 dark:border-slate-800 shadow-2xl flex flex-col items-center justify-center relative overflow-hidden group">
+                 <div className={`absolute top-0 left-0 w-1.5 h-full ${resStyle.text.split(' ')[0].replace('text', 'bg')}`}></div>
+                 <p className={`text-5xl font-black mb-2 transition-transform group-hover:scale-110 ${resStyle.text}`}>{finalPercent}%</p>
+                 <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Точность</p>
                </div>
-               <div className={`bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 shadow-xl transition-colors duration-700 ${resultStyle.border}`}>
-                 <p className="text-4xl font-black dark:text-white mb-1">{state.score}</p>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{getScorePlural(state.score)}</p>
+               
+               <div className="bg-white dark:bg-slate-900 p-10 rounded-[45px] border border-slate-100 dark:border-slate-800 shadow-2xl flex flex-col items-center justify-center group">
+                 <p className="text-5xl font-black dark:text-white mb-2 transition-transform group-hover:scale-110">{state.score}</p>
+                 <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">{getScorePlural(state.score)}</p>
                </div>
-               <div className={`bg-white dark:bg-slate-900 p-8 rounded-[40px] border-2 shadow-xl transition-colors duration-700 flex flex-col justify-center ${resultStyle.border}`}>
-                 <div className="flex items-center justify-center gap-1.5 mb-1">
-                   <Timer className="w-5 h-5 text-indigo-500" />
-                   <p className="text-3xl font-black dark:text-white tabular-nums">{formatTime(state.secondsElapsed)}</p>
+               
+               <div className="bg-white dark:bg-slate-900 p-10 rounded-[45px] border border-slate-100 dark:border-slate-800 shadow-2xl flex flex-col items-center justify-center group">
+                 <div className="flex items-center gap-3 mb-2">
+                   <Timer className="w-8 h-8 text-indigo-500" />
+                   <p className="text-4xl font-black dark:text-white tabular-nums transition-transform group-hover:scale-110">{formatTime(state.secondsElapsed)}</p>
                  </div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Времени затрачено</p>
+                 <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Времени затрачено</p>
                </div>
              </div>
-             <div className="flex flex-col sm:flex-row justify-center gap-4">
-                <Button onClick={() => startSession(state.mode!)} className="px-10 rounded-full h-14">Повторить попытку</Button>
-                <Button variant="secondary" onClick={() => setState(s => ({ ...s, status: 'mode_selection' }))} className="px-10 rounded-full h-14">К режимам</Button>
+             
+             <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+                <Button 
+                  onClick={() => startSession(state.mode!)} 
+                  className="w-full sm:w-auto px-12 h-16 rounded-[25px] text-lg font-black shadow-2xl shadow-indigo-200 dark:shadow-none transition-transform hover:-translate-y-1 active:scale-95"
+                >
+                  <RefreshCw className="w-5 h-5 mr-3" /> Повторить попытку
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setState(s => ({ ...s, status: 'mode_selection' }))} 
+                  className="w-full sm:w-auto px-12 h-16 rounded-[25px] text-lg font-black border-2 transition-transform hover:-translate-y-1 active:scale-95"
+                >
+                  <LayoutGrid className="w-5 h-5 mr-3" /> К режимам
+                </Button>
              </div>
           </div>
         );
