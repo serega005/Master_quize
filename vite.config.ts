@@ -4,10 +4,12 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   // Загружаем переменные из .env файлов и системного окружения
-  const env = loadEnv(mode, process.cwd(), '');
+  // Fix: Use type assertion to 'any' for 'process' to avoid "Property 'cwd' does not exist on type 'Process'" error
+  const env = loadEnv(mode, (process as any).cwd(), '');
   
   // Ищем ключ во всех возможных источниках (API_KEY, VITE_API_KEY или системный process.env)
-  const apiKey = env.API_KEY || env.VITE_API_KEY || process.env.API_KEY || "";
+  // Fix: Use type assertion for process.env as well to ensure consistent property access
+  const apiKey = env.API_KEY || env.VITE_API_KEY || (process as any).env.API_KEY || "";
   
   console.log('Build: API_KEY detected:', apiKey ? 'YES (Starts with ' + apiKey.substring(0, 4) + ')' : 'NO');
 
